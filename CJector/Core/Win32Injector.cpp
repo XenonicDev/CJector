@@ -76,7 +76,7 @@ InjectResult Injector::Inject(std::string ProcessName, std::string DLLPath)
 		// Spin a Thread on the Target, Force the Target to Load Our DLL.
 		HANDLE TargetRogueThread = CreateRemoteThread(Target, NULL, NULL, (LPTHREAD_START_ROUTINE)LoadLibraryAddress, DLLPathPayload, 0, NULL);
 
-		int Error = WaitForSingleObject(TargetRogueThread, 5000);
+		int Error = WaitForSingleObject(TargetRogueThread, INJECTION_TIMEOUT > 0 ? INJECTION_TIMEOUT : INFINITE);
 		if (Error != 0)
 		{
 			if (Error == WAIT_TIMEOUT)

@@ -1,5 +1,8 @@
 #pragma once
 
+// How Long to Wait Before Marking the Injection as a Failure. 0 for Infinite Wait
+#define INJECTION_TIMEOUT 0
+
 #include <string>
 
 enum InjectResult
