@@ -7,7 +7,6 @@
 
 InjectResult Injector::Inject(std::string ProcessName, std::string DLLPath)
 {
-	FormatProcess(ProcessName);
 	FormatPath(DLLPath);
 
 	WIN32_FIND_DATA FindDLLData;
@@ -27,67 +26,92 @@ InjectResult Injector::Inject(std::string ProcessName, std::string DLLPath)
 
 	HANDLE Flash = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
 
-	if (Process32First(Flash, &Entry))
+	// Whether We Are Passing a Process Name or ID
+	if (ProcessName.find("TARGET:") == std::string::npos)
 	{
-		do
+		bool Result = false;
+
+		FormatProcess(ProcessName);
+
+		if (Process32First(Flash, &Entry))
 		{
-			if (strcmp(Entry.szExeFile, ProcessName.c_str()) == 0)
+			do
 			{
-				HANDLE Target = OpenProcess(PROCESS_ALL_ACCESS, false, Entry.th32ProcessID);
-
-				if ((Target != INVALID_HANDLE_VALUE) && (Target != NULL))
+				if (strcmp(Entry.szExeFile, ProcessName.c_str()) == 0)
 				{
-					LPVOID LoadLibraryAddress = (LPVOID)GetProcAddress(GetModuleHandleA("kernel32.dll"), "LoadLibraryA");
-					LPVOID DLLPathPayload = VirtualAllocEx(Target, NULL, DLLPath.length(), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-
-					// Allocate the DLL Path on the Remote Process Heap
-					WriteProcessMemory(Target, DLLPathPayload, DLLPath.c_str(), DLLPath.length(), nullptr);
-					
-					// Spin a Thread on the Target, Force the Target to Load Our DLL.
-					HANDLE TargetRogueThread = CreateRemoteThread(Target, NULL, NULL, (LPTHREAD_START_ROUTINE)LoadLibraryAddress, DLLPathPayload, 0, NULL);
-					
-					int Error = WaitForSingleObject(TargetRogueThread, 5000);
-					if (Error != 0)
-					{
-						if (Error == WAIT_TIMEOUT)
-						{
-							CloseHandle(Target);
-
-							return Failure_InjectionTimeout;
-						}
-
-						CloseHandle(Target);
-
-						throw;
-
-						return Failure_Unknown;
-					}
-
-					// Finished, the Target has Now Loaded Our DLL, Cleanup
-
-					VirtualFreeEx(Target, DLLPathPayload, DLLPath.length(), MEM_RELEASE);
-					CloseHandle(TargetRogueThread);
-					CloseHandle(Target);
-
-					return Success;
-				}
-
-				else
-				{
-					return Failure_ProcessNotFound;
+					Result = true;
 				}
 			}
+
+			while (Process32Next(Flash, &Entry));
 		}
 
-		while (Process32Next(Flash, &Entry));
+		else
+		{
+			return Failure_Unknown;
+		}
+
+		if (!Result)
+		{
+			return Failure_ProcessNotFound;
+		}
 	}
 
 	else
 	{
-		throw;
-
-		return Failure_Unknown;
+		// Set the Process ID Manually
+		Entry.th32ProcessID = std::stoi(ProcessName.substr(7));
 	}
 
-	return Failure_ProcessNotFound;
+	HANDLE Target = OpenProcess(PROCESS_ALL_ACCESS, false, Entry.th32ProcessID);
+
+	if ((Target != INVALID_HANDLE_VALUE) && (Target != NULL))
+	{
+		LPVOID LoadLibraryAddress = (LPVOID)GetProcAddress(GetModuleHandleA("kernel32.dll"), "LoadLibraryA");
+		LPVOID DLLPathPayload = VirtualAllocEx(Target, NULL, DLLPath.length(), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+
+		// Allocate the DLL Path on the Remote Process Heap
+		WriteProcessMemory(Target, DLLPathPayload, DLLPath.c_str(), DLLPath.length(), nullptr);
+
+		// Spin a Thread on the Target, Force the Target to Load Our DLL.
+		HANDLE TargetRogueThread = CreateRemoteThread(Target, NULL, NULL, (LPTHREAD_START_ROUTINE)LoadLibraryAddress, DLLPathPayload, 0, NULL);
+
+		int Error = WaitForSingleObject(TargetRogueThread, 5000);
+		if (Error != 0)
+		{
+			if (Error == WAIT_TIMEOUT)
+			{
+				CloseHandle(Target);
+
+				return Failure_InjectionTimeout;
+			}
+
+			CloseHandle(Target);
+
+			return Failure_Unknown;
+		}
+
+		// Finished, the Target has Now Loaded Our DLL, Cleanup
+
+		VirtualFreeEx(Target, DLLPathPayload, DLLPath.length(), MEM_RELEASE);
+		CloseHandle(TargetRogueThread);
+		CloseHandle(Target);
+
+		return Success;
+	}
+
+	else
+	{
+		return Failure_ProcessNotFound;
+	}
+}
+
+InjectResult Injector::Inject(unsigned int ProcessID, std::string DLLPath)
+{
+	PROCESSENTRY32 Entry;
+	Entry.dwSize = sizeof(Entry);
+
+	HANDLE Flash = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
+
+	return Inject("TARGET:" + std::to_string(ProcessID), DLLPath);
 }

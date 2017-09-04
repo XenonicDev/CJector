@@ -11,6 +11,7 @@ public:
 	~Injector() {}
 
 	InjectResult Inject(std::string ProcessName, std::string DLLPath);
+	InjectResult Inject(unsigned int ProcessID, std::string DLLPath);
 
 private:
 	Injector(const Injector&);
